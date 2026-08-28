@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "itens": {
+    "consumo tusd reserv.": {
+      "descricao": "Consumo TUSD Reserv.",
+      "coluna_valor": "Consumo_TUSD_Reserv.",
+      "unidade": "kWh",
+      "coluna_qtd": "Consumo_TUSD_Reserv._qtd"
+    },
+    "consumo te reservado": {
+      "descricao": "Consumo TE Reservado",
+      "coluna_valor": "Consumo_TE_Reservado",
+      "unidade": "kWh",
+      "coluna_qtd": "Consumo_TE_Reservado_qtd"
+    },
+    "multa": {
+      "descricao": "Multa",
+      "coluna_valor": "Multa",
+      "unidade": "",
+      "coluna_nota_fiscal": "Multa_NF"
+    },
+    "juros": {
+      "descricao": "Juros",
+      "coluna_valor": "Juros",
+      "unidade": "",
+      "coluna_nota_fiscal": "Juros_NF"
+    }
+  }
+}

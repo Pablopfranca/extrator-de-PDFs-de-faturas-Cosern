@@ -24,6 +24,57 @@
       "coluna_valor": "Juros",
       "unidade": "",
       "coluna_nota_fiscal": "Juros_NF"
+    },
+    "demanda de injeção": {
+      "descricao": "Demanda de Injeção",
+      "coluna_valor": "Demanda_de_Injeção",
+      "unidade": "kW",
+      "coluna_qtd": "Demanda_de_Injeção_qtd"
+    },
+    "pagamento a maior": {
+      "descricao": "Pagamento a maior",
+      "coluna_valor": "Pagamento_a_maior",
+      "unidade": ""
+    },
+    "cob. icms subven-cde": {
+      "descricao": "Cob. ICMS Subven-CDE",
+      "coluna_valor": "Cob._ICMS_Subven-CDE",
+      "unidade": ""
+    },
+    "acrés.bd.vermelha-p2": {
+      "descricao": "Acrés.Bd.VERMELHA-P2",
+      "coluna_valor": "Acrés.Bd.VERMELHA-P2",
+      "unidade": ""
+    },
+    "relig. u.consumidora": {
+      "descricao": "Relig. U.Consumidora",
+      "coluna_valor": "Relig._U.Consumidora",
+      "unidade": ""
+    },
+    "cor.mon.cred-antecip": {
+      "descricao": "Cor.Mon.Cred-Antecip",
+      "coluna_valor": "Cor.Mon.Cred-Antecip",
+      "unidade": ""
+    },
+    "dev. pag.duplicidade": {
+      "descricao": "Dev. Pag.Duplicidade",
+      "coluna_valor": "Dev._Pag.Duplicidade",
+      "unidade": ""
+    },
+    "cor.mo-outr dev": {
+      "descricao": "Cor.Mo-Outr Dev",
+      "coluna_valor": "Cor.Mo-Outr_Dev",
+      "unidade": ""
+    },
+    "igpm": {
+      "descricao": "IGPM",
+      "coluna_valor": "IGPM",
+      "unidade": ""
+    },
+    "deslocamento poste": {
+      "descricao": "Deslocamento Poste",
+      "coluna_valor": "Deslocamento_Poste",
+      "unidade": ""
     }
   }
 }

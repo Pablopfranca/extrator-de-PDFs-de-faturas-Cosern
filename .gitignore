@@ -1,7 +1,6 @@
-# Dados sensíveis — nunca versionar faturas nem saídas de ingestão
-data/*.pdf
-data/*.csv
-data/falhas/
+# Dados sensíveis — PDFs, JSON extraídos, falhas (PII de faturas)
+data/*
+!data/README.md
 
 # Artefatos locais de debug/análise
 _debug_*.py
@@ -9,11 +8,18 @@ _scan_*.txt
 _analise_*.txt
 *.log
 
+# Capturas e dumps de rede
+*.har
+*.png
+
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
+
+# Ambiente
 .env
 .env.*
+!.env.example

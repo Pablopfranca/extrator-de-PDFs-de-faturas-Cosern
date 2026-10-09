@@ -26,7 +26,9 @@ from services.campos_fatura import (
 logger = logging.getLogger(__name__)
 
 KEYWORD_PAGINA_VALIDA = r"C[ÓO]DIGO\s+DA\s+INSTALA"
+KEYWORD_PAGINA_UC = r"UNIDADE\s+CONSUMIDORA|N[°º]?\s*(?:DA\s+)?UNIDADE\s+CONSUMIDORA|\bUC\b"
 HEADER_CROP_HEIGHT_PT = 250
+HEADER_IDENT_MAX_TOP_PT = 115
 
 PdfSource = Union[str, Path, BinaryIO, bytes]
 
@@ -64,7 +66,15 @@ _RE_CODIGO_CLIENTE_RODAPE = re.compile(
     re.MULTILINE,
 )
 _RE_NUMERO_UC = re.compile(
-    r"(?:N[°º]?\s*(?:da\s+)?Unidade Consumidora|UC)\s*[:\s]+(\d{4,15})",
+    r"(?:"
+    r"N[°º]?\s*(?:da\s+)?Unidade\s+Consumidora|"
+    r"Unidade\s+Consumidora(?:\s*N[°º]?)?|"
+    r"\bUC\b"
+    r")\s*[:\-\s]*(\d{4,15})",
+    re.IGNORECASE,
+)
+_RE_NUMERO_UC_CABECALHO = re.compile(
+    r"UNIDADE\s+CONSUMIDORA\s*(?:N[°º]?)?\s*[:\-\s]*(\d{4,15})",
     re.IGNORECASE,
 )
 _RE_CLASSIFICACAO_A = re.compile(
@@ -262,8 +272,16 @@ def _abrir_pdf(fonte: PdfSource) -> pdfplumber.PDF:
 # ---------------------------------------------------------------------------
 
 
+def _pagina_tem_identificador(texto: str) -> bool:
+    """Cabeçalho antigo (código instalação) ou novo (número da UC)."""
+    cabecalho = texto[:1400]
+    if re.search(KEYWORD_PAGINA_VALIDA, cabecalho, re.IGNORECASE):
+        return True
+    return bool(re.search(KEYWORD_PAGINA_UC, cabecalho, re.IGNORECASE))
+
+
 def _pagina_e_fatura_valida(texto: str) -> bool:
-    if not re.search(KEYWORD_PAGINA_VALIDA, texto, re.IGNORECASE):
+    if not _pagina_tem_identificador(texto):
         return False
     if not _RE_CLASSIFICACAO_COMPLETA.search(texto):
         return False
@@ -290,7 +308,7 @@ def _extrair_texto_cabecalho(page: Page) -> str:
         return ""
 
 
-def _extrair_codigo_instalacao_geometrico(page: Page) -> str | None:
+def _extrair_codigo_instalacao_geometrico(page: Page, texto: str = "") -> str | None:
     try:
         palavras = page.extract_words(x_tolerance=2, y_tolerance=2)
     except Exception:
@@ -306,7 +324,7 @@ def _extrair_codigo_instalacao_geometrico(page: Page) -> str | None:
             for p in palavras
             if abs(p["top"] - y_ref) < 6
             and p["x0"] > palavra["x0"]
-            and re.fullmatch(r"\d{4,10}", p["text"])
+            and re.fullmatch(r"\d{4,15}", p["text"])
         ]
         if candidatos:
             return min(candidatos, key=lambda p: p["x0"])["text"]
@@ -322,25 +340,62 @@ def _extrair_codigo_instalacao_geometrico(page: Page) -> str | None:
             p
             for p in palavras
             if rotulo_y - 2 <= p["top"] <= rotulo_y + 14
-            and re.fullmatch(r"\d{4,10}", p["text"])
+            and re.fullmatch(r"\d{4,15}", p["text"])
         ]
         if candidatos_rotulo:
             return min(candidatos_rotulo, key=lambda p: p["x0"])["text"]
+
+    # Padrão 3: UC no cabeçalho — só se a página não tiver "Código da instalação"
+    if re.search(KEYWORD_PAGINA_VALIDA, texto or "", re.I):
+        return None
+
+    for indice, palavra in enumerate(palavras):
+        if palavra["top"] > HEADER_IDENT_MAX_TOP_PT:
+            continue
+        texto_p = palavra["text"].upper()
+        if texto_p != "UNIDADE":
+            continue
+        vizinhos = [
+            palavras[j]["text"].upper()
+            for j in range(indice + 1, min(indice + 4, len(palavras)))
+            if abs(palavras[j]["top"] - palavra["top"]) < 8
+        ]
+        if not any("CONSUMIDORA" in v or v == "UC" for v in vizinhos):
+            continue
+        y_ref = palavra["top"]
+        candidatos_uc = [
+            p
+            for p in palavras
+            if abs(p["top"] - y_ref) < 10
+            and p["x0"] > palavra["x0"]
+            and re.fullmatch(r"\d{4,15}", p["text"])
+        ]
+        if candidatos_uc:
+            return min(candidatos_uc, key=lambda p: p["x0"])["text"]
+        candidatos_abaixo = [
+            p
+            for p in palavras
+            if y_ref < p["top"] <= y_ref + 16
+            and re.fullmatch(r"\d{4,15}", p["text"])
+        ]
+        if candidatos_abaixo:
+            return min(candidatos_abaixo, key=lambda p: p["x0"])["text"]
 
     return None
 
 
 def _extrair_codigo_instalacao(page: Page, texto: str, cabecalho: str) -> str | None:
+    """Código da instalação (COID / rótulo), sem confundir com UC ou NF."""
     for bloco in (cabecalho, texto):
         for padrao in (
-            _RE_CODIGO_INSTALACAO_MASCARADO,
             _RE_CODIGO_INSTALACAO_ANTES_NF,
             _RE_CODIGO_INSTALACAO_COID,
+            _RE_CODIGO_INSTALACAO_MASCARADO,
         ):
             codigo = _primeiro_match(padrao, bloco)
             if codigo:
                 return codigo
-    return _extrair_codigo_instalacao_geometrico(page)
+    return _extrair_codigo_instalacao_geometrico(page, texto)
 
 
 def _extrair_chave_acesso(texto: str) -> str:
@@ -361,9 +416,58 @@ def _extrair_chave_acesso(texto: str) -> str:
     return ""
 
 
-def _extrair_numero_uc(texto: str) -> str:
-    """UC só quando explícita na fatura; concessionária ainda não informa na maioria."""
-    return _limpar_texto(_primeiro_match(_RE_NUMERO_UC, texto))
+def _extrair_numero_uc(texto: str, cabecalho: str = "") -> str:
+    """Número da UC quando explícito (cabeçalho novo ou rodapé)."""
+    for bloco in (cabecalho, texto[:1400], texto):
+        for padrao in (_RE_NUMERO_UC_CABECALHO, _RE_NUMERO_UC):
+            valor = _primeiro_match(padrao, bloco)
+            if valor:
+                return _limpar_texto(valor)
+    return ""
+
+
+def _extrair_numero_uc_geometrico(page: Page) -> str | None:
+    return _extrair_codigo_instalacao_geometrico(page)
+
+
+def _layout_usa_uc_no_cabecalho(texto: str, cabecalho: str) -> bool:
+    bloco = f"{cabecalho}\n{texto[:1400]}"
+    if _RE_NUMERO_UC_CABECALHO.search(bloco):
+        return True
+    if re.search(
+        r"UNIDADE\s+CONSUMIDORA",
+        bloco,
+        re.I,
+    ) and not re.search(KEYWORD_PAGINA_VALIDA, bloco, re.I):
+        return True
+    return False
+
+
+def _resolver_identificador_fatura(
+    codigo_instalacao: str | None,
+    numero_uc: str,
+    texto: str,
+    cabecalho: str,
+) -> tuple[str, str]:
+    """
+    Retorna (chave de agrupamento, numero_uc).
+
+    Formato antigo: código de instalação (COID, até ~10 dígitos) + UC opcional.
+    Formato novo: número da UC no cabeçalho quando não há código de instalação.
+    """
+    inst = (codigo_instalacao or "").strip()
+    uc = (numero_uc or "").strip()
+    inst_digitos = re.sub(r"\D", "", inst)
+
+    if inst_digitos and len(inst_digitos) <= 10:
+        return inst, uc or inst
+
+    if _layout_usa_uc_no_cabecalho(texto, cabecalho):
+        chave = uc or inst
+        return chave, uc or inst
+    if inst:
+        return inst, uc or inst
+    return uc, uc
 
 
 def _extrair_bloco_endereco(texto: str) -> tuple[str, str, str]:
@@ -911,10 +1015,20 @@ def _extrair_pagina(
         return None
 
     cabecalho = _extrair_texto_cabecalho(page)
-    codigo_instalacao = _extrair_codigo_instalacao(page, texto, cabecalho)
+    numero_uc = (
+        _extrair_numero_uc(texto, cabecalho)
+        or _limpar_texto(_extrair_numero_uc_geometrico(page) or "")
+    )
+    codigo_instalacao_fisico = _extrair_codigo_instalacao(page, texto, cabecalho)
+    codigo_instalacao, numero_uc = _resolver_identificador_fatura(
+        codigo_instalacao_fisico,
+        numero_uc,
+        texto,
+        cabecalho,
+    )
     if not codigo_instalacao:
         logger.warning(
-            "Página %d de %s descartada: código de instalação ausente.",
+            "Página %d de %s descartada: instalação/UC ausente no cabeçalho.",
             numero_pagina,
             arquivo_origem,
         )
@@ -933,7 +1047,7 @@ def _extrair_pagina(
 
     fatura["codigo_instalacao"] = codigo_instalacao
     fatura["codigo_cliente"] = _extrair_codigo_cliente(texto, cabecalho) or ""
-    fatura["numero_uc"] = _extrair_numero_uc(texto)
+    fatura["numero_uc"] = numero_uc or codigo_instalacao
 
     if fatura["grupo"] == "A":
         fatura.update(
